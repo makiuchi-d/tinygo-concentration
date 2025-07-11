@@ -200,7 +200,10 @@ func main() {
 		Precision: 4,
 	})
 
-	time.Sleep(50 * time.Millisecond)
+	initPins()
+	ws := NewWS2812B(machine.GPIO1)
+	ws.WriteRaw([]uint32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	time.Sleep(time.Second / 2)
 
 	tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 15, "Select Mode", white)
 	hardmode := false
@@ -225,12 +228,7 @@ func main() {
 	}
 
 	time.Sleep(10 * time.Millisecond)
-	tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 15, "Game Start", white)
 
-	initPins()
-	ws := NewWS2812B(machine.GPIO1)
-	ws.WriteRaw([]uint32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
-	time.Sleep(time.Second / 2)
 	cs := newCards(hardmode)
 
 	num := 6
@@ -286,12 +284,6 @@ func main() {
 	for n := range cs {
 		cs[n].removed = false
 		cs[n].open = true
-	}
-	ws.WriteRaw(cs.getRaw())
-
-	time.Sleep(time.Second * 5)
-	for n := range cs {
-		cs[n].removed = true
 	}
 	ws.WriteRaw(cs.getRaw())
 }
