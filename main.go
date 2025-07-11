@@ -1,12 +1,19 @@
 package main
 
 import (
+	"fmt"
+	"image/color"
 	"machine"
 	"math/rand"
 	"time"
 
 	pio "github.com/tinygo-org/pio/rp2-pio"
 	"github.com/tinygo-org/pio/rp2-pio/piolib"
+	"tinygo.org/x/drivers"
+	"tinygo.org/x/drivers/encoders"
+	"tinygo.org/x/drivers/ssd1306"
+	"tinygo.org/x/tinyfont"
+	"tinygo.org/x/tinyfont/proggy"
 )
 
 type WS2812B struct {
@@ -140,12 +147,91 @@ func waitCloseKey(cs cards) int {
 	}
 }
 
+type RotatedDisplay struct {
+	drivers.Displayer
+}
+
+func (d *RotatedDisplay) SetPixel(x, y int16, c color.RGBA) {
+	// 180度回転
+	sx, sy := d.Displayer.Size()
+	d.Displayer.SetPixel(sx-x, sy-y, c)
+}
+
+func getSelectInput(rotenc *encoders.QuadratureDevice, rotbtn machine.Pin) bool {
+	pos := rotenc.Position()
+	for {
+		time.Sleep(10 * time.Millisecond)
+
+		if !rotbtn.Get() {
+			return true
+		}
+		if pos != rotenc.Position() {
+			return false
+		}
+	}
+}
+
 func main() {
+	machine.I2C0.Configure(machine.I2CConfig{
+		Frequency: 2.8 * machine.MHz,
+		SDA:       machine.GPIO12,
+		SCL:       machine.GPIO13,
+	})
+
+	display := ssd1306.NewI2C(machine.I2C0)
+	display.Configure(ssd1306.Config{
+		Address: 0x3C,
+		Width:   128,
+		Height:  64,
+	})
+	display.ClearDisplay()
+
+	rotDisplay := RotatedDisplay{&display}
+	white := color.RGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+	black := color.RGBA{R: 0, G: 0, B: 0, A: 0xFF}
+
+	rotbtn := machine.GPIO2
+	rotbtn.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
+	rotenc := encoders.NewQuadratureViaInterrupt(
+		machine.GPIO3,
+		machine.GPIO4,
+	)
+	rotenc.Configure(encoders.QuadratureConfig{
+		Precision: 4,
+	})
+
+	time.Sleep(50 * time.Millisecond)
+
+	tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 15, "Select Mode", white)
+	hardmode := false
+	for {
+		if hardmode {
+			tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 30, ">", black)
+			tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 30, "  Normal", white)
+			tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 45, "> Hard", white)
+		} else {
+			tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 30, "> Normal", white)
+			tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 45, ">", black)
+			tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 45, "  Hard", white)
+		}
+		display.Display()
+
+		if getSelectInput(rotenc, rotbtn) {
+			fmt.Println("input!")
+			break
+		}
+		fmt.Println("change!")
+		hardmode = !hardmode
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	tinyfont.WriteLine(&rotDisplay, &proggy.TinySZ8pt7b, 5, 15, "Game Start", white)
+
 	initPins()
 	ws := NewWS2812B(machine.GPIO1)
 	ws.WriteRaw([]uint32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 	time.Sleep(time.Second / 2)
-	cs := newCards(true)
+	cs := newCards(hardmode)
 
 	num := 6
 
