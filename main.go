@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"image/color"
 	"machine"
 	"math/rand"
@@ -16,16 +15,11 @@ import (
 	"tinygo.org/x/tinyfont/proggy"
 )
 
-type WS2812B struct {
-	*piolib.WS2812B
-	Pin machine.Pin
-}
-
-func NewWS2812B(pin machine.Pin) *WS2812B {
+func newWS2812B(pin machine.Pin) *piolib.WS2812B {
 	s, _ := pio.PIO0.ClaimStateMachine()
 	ws, _ := piolib.NewWS2812B(s, pin)
 	ws.EnableDMA(true)
-	return &WS2812B{WS2812B: ws}
+	return ws
 }
 
 type card struct {
@@ -69,7 +63,7 @@ func newCards(hard bool) cards {
 func randColor(rng *rand.Rand) uint32 {
 	for {
 		c := rng.Uint32() & 0xf0f0f000
-		c = c | (c >> 8) | 0x000000ff
+		c = c | (c >> 4) | 0x000000ff
 		if c != 0x000000ff && c != 0xffffffff {
 			return c
 		}
@@ -92,19 +86,12 @@ func (cs cards) getRaw() []uint32 {
 	return r
 }
 
-var (
-	colPins = []machine.Pin{
-		machine.GPIO5,
-		machine.GPIO6,
-		machine.GPIO7,
-		machine.GPIO8,
-	}
-	rowPins = []machine.Pin{
-		machine.GPIO9,
-		machine.GPIO10,
-		machine.GPIO11,
-	}
-)
+var colPins = []machine.Pin{
+	machine.GPIO5, machine.GPIO6, machine.GPIO7, machine.GPIO8,
+}
+var rowPins = []machine.Pin{
+	machine.GPIO9, machine.GPIO10, machine.GPIO11,
+}
 
 func initPins() {
 	for _, p := range colPins {
@@ -201,7 +188,7 @@ func main() {
 	})
 
 	initPins()
-	ws := NewWS2812B(machine.GPIO1)
+	ws := newWS2812B(machine.GPIO1)
 	ws.WriteRaw([]uint32{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 	time.Sleep(time.Second / 2)
 
@@ -220,10 +207,8 @@ func main() {
 		display.Display()
 
 		if getSelectInput(rotenc, rotbtn) {
-			fmt.Println("input!")
 			break
 		}
-		fmt.Println("change!")
 		hardmode = !hardmode
 	}
 
@@ -231,9 +216,7 @@ func main() {
 
 	cs := newCards(hardmode)
 
-	num := 6
-
-	for {
+	for pairs := 6; pairs > 0; {
 		ws.WriteRaw(cs.getRaw())
 
 		// first card
@@ -246,36 +229,24 @@ func main() {
 		cs[p2].open = true
 		ws.WriteRaw(cs.getRaw())
 
-		if cs[p1].color == cs[p2].color {
-			time.Sleep(time.Second / 2)
-			cs[p1].removed = true
-			cs[p2].removed = true
-			ws.WriteRaw(cs.getRaw())
-			time.Sleep(time.Second / 2)
-			cs[p1].removed = false
-			cs[p2].removed = false
-			ws.WriteRaw(cs.getRaw())
-			time.Sleep(time.Second / 2)
-			cs[p1].removed = true
-			cs[p2].removed = true
-			ws.WriteRaw(cs.getRaw())
-			time.Sleep(time.Second / 2)
-			cs[p1].removed = false
-			cs[p2].removed = false
-			ws.WriteRaw(cs.getRaw())
-			time.Sleep(time.Second / 2)
-			cs[p1].removed = true
-			cs[p2].removed = true
-
-			num--
-			if num == 0 {
-				break
-			}
-		} else {
+		if cs[p1].color != cs[p2].color {
 			time.Sleep(time.Second * 2)
 			cs[p1].open = false
 			cs[p2].open = false
+			continue
 		}
+
+		time.Sleep(time.Second / 2)
+		for i := range 4 {
+			cs[p1].removed = i%2 == 0
+			cs[p2].removed = i%2 == 0
+			ws.WriteRaw(cs.getRaw())
+			time.Sleep(time.Second / 2)
+		}
+
+		cs[p1].removed = true
+		cs[p2].removed = true
+		pairs--
 	}
 
 	ws.WriteRaw(cs.getRaw())
